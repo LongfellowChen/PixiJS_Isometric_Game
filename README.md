@@ -1,34 +1,89 @@
-# PixiJS 2.5D Isometric Engine
+# PixiJS Isometric Game
 
-This project is a 2.5D (Isometric) game engine built with PixiJS v8, TypeScript, and Vite.
+An isometric 2D game built with PixiJS v8, featuring intelligent player movement, enemy AI, and dynamic obstacle avoidance.
 
 ## Features
-- **PixiJS v8 Implementation**: Uses the latest asynchronous `app.init()` and modern `GraphicsContext`.
-- **Isometric Logic**: Standard 2:1 ratio (64x32px tiles) with Cartesian ↔ Isometric conversion.
-- **Depth Sorting**: Automatic occlusion handling based on Y-coordinate.
-- **Interactive Movement**: Click anywhere on the grid to move the zombie character.
+
+- **PixiJS v8 Implementation**: Modern asynchronous rendering with `app.init()` and `GraphicsContext`
+- **Isometric Projection**: 2:1 ratio isometric view with Cartesian ↔ Isometric coordinate conversion
+- **Intelligent Movement System**:
+  - Player: Direct movement to clicked positions with obstacle avoidance
+  - Enemies: AI-driven pursuit with smart pathfinding around obstacles
+- **Collision Detection**: Terrain and entity collision with smooth boundary sliding
+- **Enemy AI States**: Patrol mode (random movement) and Chase mode (player pursuit)
+- **Visual Effects**: Atmospheric elements including god rays and fireflies
+- **TypeScript**: Full type safety and modern development practices
+
+## Game Mechanics
+
+- **Player Controls**:
+  - Left Click: Move to position with automatic obstacle navigation
+  - Hold Left Click: Attack enemies when in range
+- **Enemy Behavior**:
+  - Patrol: Random movement when player is distant
+  - Chase: Intelligent pursuit when player is nearby
+  - Obstacle Avoidance: Smart navigation around terrain and other entities
+- **Combat System**: Player can attack enemies, enemies follow player (attack system pending implementation)
 
 ## Quick Start
 
-### 1. Install Dependencies
+### Prerequisites
+- Node.js (v16 or higher)
+- npm or yarn
+
+### Installation
 ```bash
 npm install
 ```
 
-### 2. Run Development Server
+### Development
 ```bash
 npm run dev
 ```
+Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-### 3. Build for Production
+### Build for Production
 ```bash
 npm run build
 ```
 
 ## Project Structure
-- `/src/engine`: Core engine logic (Coordinate conversion, etc.)
-- `/src/main.ts`: Application entry point and scene setup.
-- `/public`: Static assets (textures, sounds).
 
-## Controls
-- **Left Click**: Set target destination for the character on the isometric grid.
+```
+src/
+├── main.ts              # Game initialization and main loop
+├── engine/
+│   ├── CoordConverter.ts # Isometric coordinate conversion
+│   └── Pathfinder.ts     # A* pathfinding algorithm
+├── game/
+│   ├── AssetManager.ts   # Texture and asset loading
+│   └── WaveController.ts # Enemy spawning system
+└── assets/               # Game assets (moved to public/)
+
+public/
+├── assets/               # Game sprites and textures
+│   ├── NPCs/            # Character sprites
+│   ├── Objects/         # Environmental objects
+│   └── Tiles/           # Terrain tiles
+└── ...
+```
+
+## Technologies Used
+
+- **PixiJS v8**: WebGL-based 2D rendering engine
+- **TypeScript**: Type-safe JavaScript development
+- **Vite**: Fast build tool and development server
+- **Isometric Projection**: 2.5D game rendering technique
+
+## Development Notes
+
+This project demonstrates advanced game development concepts including:
+- Isometric coordinate systems
+- Entity-component architecture
+- AI pathfinding and obstacle avoidance
+- Collision detection and response
+- State-based AI systems
+
+## License
+
+This project is open source and available under the [MIT License](LICENSE).
