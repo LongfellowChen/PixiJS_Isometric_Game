@@ -47,6 +47,26 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 npm run build
 ```
 
+## Deployment
+
+### GitHub Pages
+
+This project is configured for automatic deployment to GitHub Pages. The game will be available at `https://[your-username].github.io/PixiJS_Game/`.
+
+#### Setup
+1. Push your code to a GitHub repository named `PixiJS_Game`
+2. Go to your repository settings
+3. Navigate to "Pages" in the sidebar
+4. Under "Source", select "GitHub Actions"
+5. The deployment will happen automatically on every push to the `main` branch
+
+#### Manual Deployment
+If you prefer to deploy manually:
+```bash
+npm run build
+```
+Then commit and push the `dist/` folder to your repository's `gh-pages` branch or use the GitHub Pages deployment action.
+
 ## Project Structure
 
 ```
