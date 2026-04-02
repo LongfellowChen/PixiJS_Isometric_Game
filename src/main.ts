@@ -3,38 +3,36 @@ import * as Matter from 'matter-js';
 import { CoordConverter } from './engine/CoordConverter';
 import { AssetManager } from './game/AssetManager';
 import { WaveController } from './game/WaveController';
-import type { Node } from './engine/Pathfinder';
 
 // Initialize the constants
-const WORLD_SIZE = 20;
-const converter = new CoordConverter(64, 32);
+const WORLD_SIZE = 20; // 世界大小（網格單位）
+const converter = new CoordConverter(64, 32); // 坐標轉換器（網格寬度64像素，高32像素）
 
 // Colors for Ghibli Forest style
 const COLORS = {
-    SKY: 0x051F10, // Forest Deep
-    MOSS_LIGHT: 0x3E8E41,
-    MOSS_DARK: 0x1E4620,
-    STONE: 0x5D5D4D, // Mossy Stone
-    MOUSE: 0xDDDDDD,
-    MOUSE_EAR: 0xFFB6C1,
-    SLIME: 0x88CC88, // Forest Slime
-    MUSHROOM: 0xFF4D4D,
-    GOD_RAY: 0xFFFFEE,
-    FIREFLY: 0xFFFF88,
+    SKY: 0x051F10, // 天空顏色（深森林色）
+    MOSS_LIGHT: 0x3E8E41, // 淺苔蘚色
+    MOSS_DARK: 0x1E4620, // 深苔蘚色
+    STONE: 0x5D5D4D, // 石頭顏色（苔蘚石）
+    MOUSE: 0xDDDDDD, // 老鼠顏色
+    MOUSE_EAR: 0xFFB6C1, // 老鼠耳朵顏色
+    SLIME: 0x88CC88, // 史萊姆顏色（森林史萊姆）
+    MUSHROOM: 0xFF4D4D, // 蘑菇顏色
+    GOD_RAY: 0xFFFFEE, // 神光顏色
+    FIREFLY: 0xFFFF88, // 螢火蟲顏色
 };
 
 /**
  * Base class for all moving entities in the world.
  */
 class BaseEntity extends PIXI.Container {
-    protected path: Node[] = [];
     protected converter: CoordConverter;
     protected body: PIXI.Container;
-    protected speed: number = 2;
-    public hp: number = 10;
-    public maxHp: number = 10;
-    public isDead: boolean = false;
-    protected flashTimer: number = 0;
+    protected speed: number = 2; // 移動速度
+    public hp: number = 10; // 當前生命值
+    public maxHp: number = 10; // 最大生命值
+    public isDead: boolean = false; // 是否死亡
+    protected flashTimer: number = 0; // 閃爍效果計時器
     protected targetX: number = 0;
     protected targetY: number = 0;
     protected hasTarget: boolean = false;
@@ -55,10 +53,6 @@ class BaseEntity extends PIXI.Container {
 
         this.body = new PIXI.Container();
         this.addChild(this.body);
-    }
-
-    public setPath(path: Node[]) {
-        this.path = path;
     }
 
     public setTarget(x: number, y: number) {
@@ -153,7 +147,7 @@ class BaseEntity extends PIXI.Container {
 class Player extends BaseEntity {
     constructor(converter: CoordConverter, world: IsometricWorld) {
         super(converter, world);
-        this.speed = 3;
+        this.speed = 3; // 玩家移動速度
 
         this.body = new PIXI.Container();
         const sprite = new PIXI.Sprite(AssetManager.get('mouse'));
@@ -165,11 +159,11 @@ class Player extends BaseEntity {
         this.width = 64;
         this.scale.y = this.scale.x;
         this.label = 'player';
-        this.hp = 100;
-        this.maxHp = 100;
+        this.hp = 100; // 玩家生命值
+        this.maxHp = 100; // 玩家最大生命值
     }
 
-    private attackCooldown: number = 0;
+    private attackCooldown: number = 0; // 攻擊冷卻時間
     public movementDirection: { x: number, y: number } | null = null;
 
     public update(delta: number) {
@@ -226,7 +220,7 @@ class Player extends BaseEntity {
 
     public attack(target: BaseEntity) {
         if (this.attackCooldown > 0 || this.isDead) return;
-        this.attackCooldown = 30; // 0.5s cooldown for continuous attacks
+        this.attackCooldown = 30; // 攻擊冷卻時間（0.5秒，60fps）
 
         // Swift Strike Dashing Effect
         const oldX = this.x;
@@ -238,20 +232,13 @@ class Player extends BaseEntity {
         this.x = (this.x + tx) / 2;
         this.y = (this.y + ty) / 2;
 
-        target.takeDamage(2);
+        target.takeDamage(2); // 造成2點傷害
 
         // Smooth return (pseudo-animation)
         setTimeout(() => {
             this.x = oldX;
             this.y = oldY;
         }, 100);
-    }
-
-    public clearPath() {
-        this.path = [];
-        this.movementDirection = null;
-        this.targetPosition = null;
-        this.targetCartesian = null;
     }
 
     public setTargetPosition(x: number, y: number) {
@@ -275,12 +262,12 @@ const AIState = {
 };
 
 class EnemyZombie extends BaseEntity {
-    private state: AIState = AIState.IDLE;
-    private stateTimer: number = 0;
+    private state: AIState = AIState.IDLE; // AI狀態
+    private stateTimer: number = 0; // 狀態計時器
 
     constructor(converter: CoordConverter, world: IsometricWorld) {
         super(converter, world);
-        this.speed = 1 + Math.random() * 1;
+        this.speed = 1 + Math.random() * 1; // 敵人移動速度（1-2之間隨機）
 
         // Use Ghibli Slime Sprite
         const sprite = new PIXI.Sprite(AssetManager.get('slime'));
@@ -291,8 +278,8 @@ class EnemyZombie extends BaseEntity {
         this.width = 64;
         this.scale.y = this.scale.x;
 
-        this.hp = 5;
-        this.maxHp = 5;
+        this.hp = 5; // 敵人生命值
+        this.maxHp = 5; // 敵人最大生命值
     }
 
     public update(delta: number) {
@@ -309,7 +296,7 @@ class EnemyZombie extends BaseEntity {
             const player = this.world.player;
             const dist = Math.sqrt(Math.pow(player.x - this.x, 2) + Math.pow(player.y - this.y, 2));
 
-            if (dist > 25) {
+            if (dist > 35) { // 停止追蹤距離閾值（35像素）
                 // Always set target position towards player when chasing
                 this.setTarget(player.x, player.y);
             } else {
@@ -330,14 +317,14 @@ class EnemyZombie extends BaseEntity {
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         // CHASE if player is close (within 200 pixels)
-        if (dist < 200) {
+        if (dist < 200) { // 追蹤玩家距離閾值（200像素）
             if (this.state !== AIState.CHASE) {
                 this.state = AIState.CHASE;
                 console.log('Zombie: Spoted Player! Chasing...');
             }
             this.isChasingPlayer = true;
             // Don't set target when chasing - use direct movement in update()
-            this.stateTimer = 60; // Check less frequently when chasing
+            this.stateTimer = 60; // Check less frequently when chasing - 追蹤狀態檢查間隔（60幀）
         }
         // PATROL if player is far
         else {
@@ -346,14 +333,14 @@ class EnemyZombie extends BaseEntity {
                 this.patrolRandomly();
             }
             this.isChasingPlayer = false;
-            this.stateTimer = 120 + Math.random() * 120; // 2-4s
+            this.stateTimer = 120 + Math.random() * 120; // 2-4s - 巡邏狀態檢查間隔（2-4秒）
         }
     }
 
     private patrolRandomly() {
-        // Generate random position within 200 pixels radius
-        const angle = Math.random() * Math.PI * 2;
-        const distance = Math.random() * 200 + 50;
+        // Generate random position within 200 pixels radius - 在200像素半徑內生成隨機位置
+        const angle = Math.random() * Math.PI * 2; // 隨機角度
+        const distance = Math.random() * 200 + 50; // 隨機距離（50-250像素）
         const tx = this.x + Math.cos(angle) * distance;
         const ty = this.y + Math.sin(angle) * distance;
         this.setTarget(tx, ty);
@@ -383,17 +370,18 @@ class IsometricWorld extends PIXI.Container {
     private mouseTargetX: number = 0;
     private mouseTargetY: number = 0;
     private mouseTargetEnemy: BaseEntity | null = null;
-    private attackTimer: number = 0;
 
     // HUD Text
     private hudText: PIXI.Text | null = null;
+    private globalUI: PIXI.Container;
 
     public getPhysicsBody(entity: BaseEntity): Matter.Body | undefined {
         return this.physicsBodies.get(entity);
     }
 
-    constructor() {
+    constructor(globalUI: PIXI.Container) {
         super();
+        this.globalUI = globalUI;
         this.sortableChildren = true;
         this.worldContainer = new PIXI.Container();
         this.worldContainer.sortableChildren = true;
@@ -410,12 +398,12 @@ class IsometricWorld extends PIXI.Container {
 
         // Initialize Physics Engine
         this.engine = Matter.Engine.create();
-        this.engine.world.gravity.y = 0; // No gravity for top-down game
+        this.engine.world.gravity.y = 0; // 禁用重力（2D俯視遊戲）
     }
 
     public async init() {
         this.x = window.innerWidth / 2;
-        this.y = 200; // Shifting down for 20x20
+        this.y = 200; // 世界初始垂直偏移
         this.generateWorldGrid();
         this.initAtmosphere();
         this.initHUD();
@@ -432,8 +420,13 @@ class IsometricWorld extends PIXI.Container {
         const playerBody = Matter.Bodies.circle(
             Math.floor(WORLD_SIZE / 2) * 64 + 32, // Cartesian X
             Math.floor(WORLD_SIZE / 2) * 64 + 32, // Cartesian Y
-            16, // radius
-            { friction: 0, frictionAir: 0.1, restitution: 0 }
+            32, // 物理碰撞半徑
+            {
+                friction: 1.0, // 增加摩擦力，讓玩家更難被推動
+                frictionAir: 0.1, // 增加空氣阻力
+                restitution: 0, // 無彈性
+                density: 0.01 // 增加密度，讓實體更重更穩定
+            }
         );
         Matter.World.add(this.engine.world, playerBody);
         this.physicsBodies.set(this.player, playerBody);
@@ -447,23 +440,23 @@ class IsometricWorld extends PIXI.Container {
     }
 
     private initAtmosphere() {
-        // Init 3 God Rays
-        for (let i = 0; i < 3; i++) {
+        // Init 10 God Rays for larger map - 初始化10個神光效果
+        for (let i = 0; i < 10; i++) {
             const ray = new PIXI.Graphics();
             ray.poly([0, 0, 100, 600, 250, 600]).fill({ color: COLORS.GOD_RAY, alpha: 0.08 });
-            ray.x = -800 + i * 400;
+            ray.x = -2000 + i * 500; // 神光間距
             ray.y = -300;
             ray.rotation = 0.2;
             this.atmosphereLayer.addChild(ray);
             this.godRays.push(ray);
         }
 
-        // Init Fireflies
-        for (let i = 0; i < 20; i++) {
+        // Init 50 Fireflies for larger map - 初始化50個螢火蟲
+        for (let i = 0; i < 50; i++) {
             const ff = new PIXI.Graphics();
             ff.circle(0, 0, 1.5).fill(COLORS.FIREFLY);
-            ff.x = (Math.random() - 0.5) * 1280;
-            ff.y = (Math.random() - 0.5) * 800;
+            ff.x = (Math.random() - 0.5) * 2560; // 螢火蟲分佈範圍
+            ff.y = (Math.random() - 0.5) * 1600;
             ff.alpha = Math.random();
             this.atmosphereLayer.addChild(ff);
             this.fireflies.push(ff);
@@ -471,27 +464,30 @@ class IsometricWorld extends PIXI.Container {
     }
 
     private initHUD() {
+        console.log('Initializing HUD...');
+
         // Glassmorphism HUD Background (Deep Green Tint)
         const hudBg = new PIXI.Graphics();
-        hudBg.roundRect(0, 0, 250, 100, 15).fill({ color: 0x112211, alpha: 0.6 });
-        hudBg.stroke({ color: 0xFFFFFF, width: 0.5, alpha: 0.2 });
-        hudBg.x = -window.innerWidth / 2 + 10;
-        hudBg.y = -190;
-        this.uiLayer.addChild(hudBg);
+        hudBg.roundRect(0, 0, 250, 100, 15).fill(0x112211, 0.8);
+        hudBg.x = 10;
+        hudBg.y = 10;
+        this.globalUI.addChild(hudBg);
+        console.log('Added HUD background to globalUI');
 
         this.hudText = new PIXI.Text({
-            text: 'Wave: 1\nEnemies: 0',
+            text: 'Wave: 1\nEnemies: 0\nHUD Test',
             style: {
-                fontFamily: 'Comic Sans MS, cursive, sans-serif',
+                fontFamily: 'Arial, sans-serif',
                 fontSize: 22,
                 fill: 0xffffff,
                 align: 'left',
-                dropShadow: { color: COLORS.SLIME, blur: 2, distance: 1 }
+                dropShadow: { color: 0x000000, blur: 2, distance: 1 }
             }
         });
         this.hudText.x = hudBg.x + 15;
         this.hudText.y = hudBg.y + 15;
-        this.uiLayer.addChild(this.hudText);
+        this.globalUI.addChild(this.hudText);
+        console.log('Added HUD text to globalUI');
     }
 
     private spawnHorde(count: number) {
@@ -511,8 +507,13 @@ class IsometricWorld extends PIXI.Container {
             const enemyBody = Matter.Bodies.circle(
                 spawnPos.x * 64 + 32,
                 spawnPos.y * 64 + 32,
-                16,
-                { friction: 0, frictionAir: 0.1, restitution: 0 }
+                32, // 物理碰撞半徑
+                {
+                    friction: 1.0, // 增加摩擦力，讓敵人更難被推動
+                    frictionAir: 0.5, // 增加空氣阻力
+                    restitution: 0, // 無彈性
+                    density: 0.01 // 增加密度，讓實體更重更穩定
+                }
             );
             Matter.World.add(this.engine.world, enemyBody);
             this.physicsBodies.set(zombie, enemyBody);
@@ -542,7 +543,7 @@ class IsometricWorld extends PIXI.Container {
                 const pos = converter.cartesianToIso(x, y);
 
                 // Ferns (4x4)
-                if (Math.random() < 0.25) {
+                if (Math.random() < 0.25) { // 蕨類生成機率（25%）
                     const fernObj = new StaticProp('Object', 'fern_object', 4);
                     fernObj.x = pos.x;
                     fernObj.y = pos.y;
@@ -557,7 +558,7 @@ class IsometricWorld extends PIXI.Container {
                         { isStatic: true }
                     );
                     Matter.World.add(this.engine.world, obstacleBody);
-                } else if (Math.random() < 0.15) {
+                } else if (Math.random() < 0.15) { // 蘑菇生成機率（15%）
                     // Mushrooms (2x2)
                     const mx = x + (Math.random() < 0.5 ? 0 : 2);
                     const my = y + (Math.random() < 0.5 ? 0 : 2);
@@ -656,7 +657,7 @@ class IsometricWorld extends PIXI.Container {
         if (this.mouseTargetEnemy && !this.mouseTargetEnemy.isDead) {
             // Handle movement towards enemy (attack is handled by timer in update())
             const dist = Math.sqrt(Math.pow(this.mouseTargetEnemy.x - this.player.x, 2) + Math.pow(this.mouseTargetEnemy.y - this.player.y, 2));
-            if (dist < 50) {
+            if (dist < 60) { // 停止移動的攻擊範圍（60像素）
                 // Close enough - stop moving (attack handled by timer)
                 this.player.clearTargetPosition();
                 this.player.movementDirection = null;
@@ -676,18 +677,24 @@ class IsometricWorld extends PIXI.Container {
 
         if (this.player) this.player.update(delta);
 
+        // Camera follow player smoothly
+        if (this.player) {
+            const targetWorldX = window.innerWidth / 2 - this.player.x;
+            const targetWorldY = window.innerHeight / 2 - this.player.y + 100; // 垂直偏移量
+            this.x += (targetWorldX - this.x) * 0.05; // 相機跟隨平滑度
+            this.y += (targetWorldY - this.y) * 0.05;
+        }
+
+        // Keep atmosphere effects in world coordinates (compensate for camera movement)
+        this.atmosphereLayer.x = -this.x * 0.1; // 視差效果強度
+        this.atmosphereLayer.y = -this.y * 0.1;
+
         // Handle continuous attack when mouse is held down over enemy
         if (this.isMouseDown && this.mouseTargetEnemy && !this.mouseTargetEnemy.isDead && this.player && !this.player.isDead) {
-            this.attackTimer -= delta;
-            if (this.attackTimer <= 0) {
-                const dist = Math.sqrt(Math.pow(this.mouseTargetEnemy.x - this.player.x, 2) + Math.pow(this.mouseTargetEnemy.y - this.player.y, 2));
-                if (dist < 50) {
-                    this.player.attack(this.mouseTargetEnemy);
-                    this.attackTimer = 30; // Reset timer for next attack (0.5s at 60fps)
-                }
+            const dist = Math.sqrt(Math.pow(this.mouseTargetEnemy.x - this.player.x, 2) + Math.pow(this.mouseTargetEnemy.y - this.player.y, 2));
+            if (dist < 60) { // 攻擊範圍（60像素）
+                this.player.attack(this.mouseTargetEnemy);
             }
-        } else {
-            this.attackTimer = 0; // Reset timer when not attacking
         }
 
         // Handle wave progression
@@ -707,7 +714,6 @@ class IsometricWorld extends PIXI.Container {
         // Cleanup Dead Enemies
         this.enemies = this.enemies.filter(enemy => {
             if (enemy.isDead) {
-                this.spawnDeathEffect(enemy.x, enemy.y);
                 this.worldContainer.removeChild(enemy);
                 return false;
             }
@@ -740,25 +746,6 @@ class IsometricWorld extends PIXI.Container {
             bar.y = entity.y;
             this.hpContainer.addChild(bar);
         });
-    }
-
-    private spawnDeathEffect(x: number, y: number) {
-        const smoke = new PIXI.Graphics();
-        smoke.circle(0, 0, 10).fill({ color: 0xFFFFFF, alpha: 0.6 });
-        smoke.x = x; smoke.y = y - 10;
-        this.atmosphereLayer.addChild(smoke);
-
-        let life = 30;
-        const tick = (delta: PIXI.Ticker) => {
-            life -= delta.deltaTime;
-            smoke.alpha = life / 30;
-            smoke.scale.set(1 + (30 - life) * 0.05);
-            if (life <= 0) {
-                this.atmosphereLayer.removeChild(smoke);
-                PIXI.Ticker.shared.remove(tick);
-            }
-        };
-        PIXI.Ticker.shared.add(tick);
     }
 
     private updateHUD() {
@@ -816,11 +803,16 @@ async function init() {
         await AssetManager.load();
         console.log('Main: Assets Loaded.');
 
-        const world = new IsometricWorld();
+        const globalUI = new PIXI.Container();
+        // app.stage.addChild(globalUI); // Move after world
+
+        const world = new IsometricWorld(globalUI);
         console.log('Main: Initializing World...');
         await world.init();
         app.stage.addChild(world);
         console.log('Main: World added to stage.');
+
+        app.stage.addChild(globalUI); // Add globalUI after world so it's on top
 
         app.ticker.add((ticker: PIXI.Ticker) => { world.update(ticker.deltaTime); });
         window.addEventListener('resize', () => {

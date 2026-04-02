@@ -53,8 +53,7 @@ npm run build
 src/
 ├── main.ts              # Game initialization and main loop
 ├── engine/
-│   ├── CoordConverter.ts # Isometric coordinate conversion
-│   └── Pathfinder.ts     # A* pathfinding algorithm
+│   └── CoordConverter.ts # Isometric coordinate conversion
 ├── game/
 │   ├── AssetManager.ts   # Texture and asset loading
 │   └── WaveController.ts # Enemy spawning system
@@ -80,8 +79,7 @@ public/
 This project demonstrates advanced game development concepts including:
 - Isometric coordinate systems
 - Entity-component architecture
-- AI pathfinding and obstacle avoidance
-- Collision detection and response
+- Physics-based movement and collision detection
 - State-based AI systems
 
 ## License
