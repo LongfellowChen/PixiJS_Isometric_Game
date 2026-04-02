@@ -1,17 +1,13 @@
 import * as PIXI from 'pixi.js';
+import * as Matter from 'matter-js';
 import { CoordConverter } from './engine/CoordConverter';
 import { AssetManager } from './game/AssetManager';
-import { Pathfinder } from './engine/Pathfinder';
 import { WaveController } from './game/WaveController';
 import type { Node } from './engine/Pathfinder';
 
 // Initialize the constants
 const WORLD_SIZE = 20;
 const converter = new CoordConverter(64, 32);
-const TILE_CENTER_OFFSET = {
-    X: 32 - 32,   // 64 / 2
-    Y: 32 - 8   // ← 關鍵！原本 16 改成 28（或 26~30 之間微調）
-};
 
 // Colors for Ghibli Forest style
 const COLORS = {
@@ -42,6 +38,8 @@ class BaseEntity extends PIXI.Container {
     protected targetX: number = 0;
     protected targetY: number = 0;
     protected hasTarget: boolean = false;
+    protected targetPosition: { x: number, y: number } | null = null;
+    protected targetCartesian: { x: number, y: number } | null = null;
     protected world: IsometricWorld;
     public isChasingPlayer: boolean = false;
 
@@ -67,48 +65,50 @@ class BaseEntity extends PIXI.Container {
         this.targetX = x;
         this.targetY = y;
         this.hasTarget = true;
+        this.targetPosition = { x, y };
+        // Convert to Cartesian pixels for physics
+        const cart = this.converter.isoToCartesian(x, y);
+        this.targetCartesian = { x: cart.x * 64 + 32, y: cart.y * 64 + 32 };
     }
 
     public update(delta: number) {
-        // Free movement towards target (used by enemies)
-        if (this.hasTarget) {
-            const dx = this.targetX - this.x;
-            const dy = this.targetY - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+        // Handle movement towards target position using physics
+        if (this.targetCartesian) {
+            const body = this.world.getPhysicsBody(this);
+            if (body) {
+                const dx = this.targetCartesian.x - body.position.x;
+                const dy = this.targetCartesian.y - body.position.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
 
-            if (distance > 2) {
-                const vx = (dx / distance) * this.speed * delta;
-                const vy = (dy / distance) * this.speed * delta;
-
-                // Check if the new position would be blocked
-                const newX = this.x + vx;
-                const newY = this.y + vy;
-
-                if (this.world.canMoveToWithEntities(this.x, this.y, newX, newY, this)) {
-                    this.x = newX;
-                    this.y = newY;
-                    // Flip the entire body container correctly
-                    if (Math.abs(vx) > 0.1) this.body.scale.x = vx > 0 ? 1 : -1;
+                if (distance < 8) { // Closer threshold for precision
+                    // Close enough to target, stop moving
+                    this.targetPosition = null;
+                    this.targetCartesian = null;
+                    this.hasTarget = false;
+                    Matter.Body.setVelocity(body, { x: 0, y: 0 });
                 } else {
-                    // Only try to slide around obstacles if chasing player
-                    if (this.isChasingPlayer && this.trySlideAroundObstacle(vx, vy, delta)) {
-                        // Successfully slid around obstacle
-                    } else {
-                        // Can't move to target, clear target to stop trying
-                        this.hasTarget = false;
-                    }
+                    // Set velocity directly towards target for precise control
+                    const normalizedDx = dx / distance;
+                    const normalizedDy = dy / distance;
+                    const velocityMagnitude = Math.min(this.speed * 2, distance * 0.1); // Cap velocity, reduce near target
+                    Matter.Body.setVelocity(body, {
+                        x: normalizedDx * velocityMagnitude,
+                        y: normalizedDy * velocityMagnitude
+                    });
                 }
-            } else {
-                // Check if we can reach the exact target position
-                if (this.world.canMoveToWithEntities(this.x, this.y, this.targetX, this.targetY, this)) {
-                    this.x = this.targetX;
-                    this.y = this.targetY;
-                }
-                this.hasTarget = false;
             }
         }
 
-        this.zIndex = this.y;
+        // Sync sprite position from physics body
+        const body = this.world.getPhysicsBody(this);
+        if (body) {
+            const isoPos = converter.cartesianToIso(body.position.x / 64, body.position.y / 64);
+            this.x = isoPos.x;
+            this.y = isoPos.y;
+            this.zIndex = this.y;
+            // Flip the entire body container correctly
+            if (Math.abs(body.velocity.x) > 0.1) this.body.scale.x = body.velocity.x > 0 ? 1 : -1;
+        }
 
         // Flash Effect
         if (this.flashTimer > 0) {
@@ -142,46 +142,6 @@ class BaseEntity extends PIXI.Container {
         this.alpha = 0; // Hide but keep for cleanup
     }
 
-    protected trySlideAroundObstacle(vx: number, vy: number, delta: number): boolean {
-        // Try to slide along obstacle boundaries by attempting multiple perpendicular movements
-        const slideDistances = [10, 20, 30]; // Try different slide distances
-        const slideAngles = [-90, -60, -30, 30, 60, 90]; // Try multiple angles around perpendicular
-
-        // Calculate original movement direction
-        const moveLength = Math.sqrt(vx * vx + vy * vy);
-        if (moveLength === 0) return false;
-
-        const moveDirX = vx / moveLength;
-        const moveDirY = vy / moveLength;
-
-        // Try different slide directions
-        for (const angle of slideAngles) {
-            const radAngle = (angle * Math.PI) / 180;
-
-            // Rotate movement direction by angle to get slide direction
-            const cos = Math.cos(radAngle);
-            const sin = Math.sin(radAngle);
-            const slideDirX = moveDirX * cos - moveDirY * sin;
-            const slideDirY = moveDirX * sin + moveDirY * cos;
-
-            // Try different distances for this direction
-            for (const distance of slideDistances) {
-                const slideX = this.x + slideDirX * distance * delta;
-                const slideY = this.y + slideDirY * distance * delta;
-
-                if (this.world.canMoveToWithEntities(this.x, this.y, slideX, slideY, this)) {
-                    this.x = slideX;
-                    this.y = slideY;
-                    // Update facing direction based on slide direction
-                    if (Math.abs(slideDirX) > 0.1) this.body.scale.x = slideDirX > 0 ? 1 : -1;
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
     public getGridPos(): { x: number, y: number } {
         const cart = this.converter.isoToCartesian(this.x, this.y);
         const gx = Math.floor(cart.x + 0.1);
@@ -210,47 +170,46 @@ class Player extends BaseEntity {
     }
 
     private attackCooldown: number = 0;
+    public movementDirection: { x: number, y: number } | null = null;
 
     public update(delta: number) {
-        // Handle path-based movement for player
-        if (this.path.length > 0) {
-            const targetNode = this.path[0];
-            const targetPos = this.converter.cartesianToIso(targetNode.x, targetNode.y);
-            const tx = targetPos.x + TILE_CENTER_OFFSET.X;
-            const ty = targetPos.y + TILE_CENTER_OFFSET.Y;
+        // Handle movement towards target position using physics
+        if (this.targetCartesian) {
+            const body = this.world.getPhysicsBody(this);
+            if (body) {
+                const dx = this.targetCartesian.x - body.position.x;
+                const dy = this.targetCartesian.y - body.position.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
 
-            const dx = tx - this.x;
-            const dy = ty - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (distance > 2) {
-                const vx = (dx / distance) * this.speed * delta;
-                const vy = (dy / distance) * this.speed * delta;
-
-                // Check if the new position would be blocked
-                const newX = this.x + vx;
-                const newY = this.y + vy;
-
-                if (this.world.canMoveToWithEntities(this.x, this.y, newX, newY, this)) {
-                    this.x = newX;
-                    this.y = newY;
-                    // Flip the entire body container correctly
-                    if (Math.abs(vx) > 0.1) this.body.scale.x = vx > 0 ? 1 : -1;
+                if (distance < 8) {
+                    // Close enough to target, stop moving
+                    this.targetPosition = null;
+                    this.targetCartesian = null;
+                    this.movementDirection = null;
+                    Matter.Body.setVelocity(body, { x: 0, y: 0 });
                 } else {
-                    // Try to move around obstacles by sliding along boundaries
-                    if (!this.trySlideAroundObstacle(vx, vy, delta)) {
-                        // Can't move along path and can't slide around, clear path to stop
-                        this.path = [];
-                    }
+                    // Set velocity directly towards target for precise control
+                    const normalizedDx = dx / distance;
+                    const normalizedDy = dy / distance;
+                    const velocityMagnitude = Math.min(this.speed * 2.5, distance * 0.15); // Player faster, better control
+                    Matter.Body.setVelocity(body, {
+                        x: normalizedDx * velocityMagnitude,
+                        y: normalizedDy * velocityMagnitude
+                    });
                 }
-            } else {
-                this.x = tx;
-                this.y = ty;
-                this.path.shift();
             }
         }
 
-        this.zIndex = this.y;
+        // Sync sprite position from physics body
+        const body = this.world.getPhysicsBody(this);
+        if (body) {
+            const isoPos = converter.cartesianToIso(body.position.x / 64, body.position.y / 64);
+            this.x = isoPos.x;
+            this.y = isoPos.y;
+            this.zIndex = this.y;
+            // Flip the entire body container correctly
+            if (Math.abs(body.velocity.x) > 0.1) this.body.scale.x = body.velocity.x > 0 ? 1 : -1;
+        }
 
         // Flash Effect
         if (this.flashTimer > 0) {
@@ -267,7 +226,7 @@ class Player extends BaseEntity {
 
     public attack(target: BaseEntity) {
         if (this.attackCooldown > 0 || this.isDead) return;
-        this.attackCooldown = 30; // 0.5s cooldown
+        this.attackCooldown = 30; // 0.5s cooldown for continuous attacks
 
         // Swift Strike Dashing Effect
         const oldX = this.x;
@@ -290,6 +249,21 @@ class Player extends BaseEntity {
 
     public clearPath() {
         this.path = [];
+        this.movementDirection = null;
+        this.targetPosition = null;
+        this.targetCartesian = null;
+    }
+
+    public setTargetPosition(x: number, y: number) {
+        this.targetPosition = { x, y };
+        // Convert to Cartesian pixels for physics
+        const cart = this.converter.isoToCartesian(x, y);
+        this.targetCartesian = { x: cart.x * 64 + 32, y: cart.y * 64 + 32 };
+    }
+
+    public clearTargetPosition() {
+        this.targetPosition = null;
+        this.targetCartesian = null;
     }
 }
 
@@ -330,28 +304,19 @@ class EnemyZombie extends BaseEntity {
             this.updateAI();
         }
 
-        // Direct movement toward player when chasing (bypass target system)
+        // Direct movement toward player when chasing (set target position)
         if (this.state === AIState.CHASE && this.world.player && !this.world.player.isDead) {
             const player = this.world.player;
-            const dx = player.x - this.x;
-            const dy = player.y - this.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+            const dist = Math.sqrt(Math.pow(player.x - this.x, 2) + Math.pow(player.y - this.y, 2));
 
-            if (dist > 25) { // Keep some minimum distance
-                const moveSpeed = this.speed * delta * 0.8; // Slightly slower than normal
-                const moveX = (dx / dist) * moveSpeed;
-                const moveY = (dy / dist) * moveSpeed;
-
-                // Try to move toward player, but respect obstacles
-                const newX = this.x + moveX;
-                const newY = this.y + moveY;
-
-                if (this.world.canMoveToWithEntities(this.x, this.y, newX, newY, this)) {
-                    this.x = newX;
-                    this.y = newY;
-                    // Update facing direction
-                    if (Math.abs(moveX) > 0.1) this.body.scale.x = moveX > 0 ? 1 : -1;
-                }
+            if (dist > 25) {
+                // Always set target position towards player when chasing
+                this.setTarget(player.x, player.y);
+            } else {
+                // Close enough, stop chasing
+                this.hasTarget = false;
+                this.targetPosition = null;
+                this.targetCartesian = null;
             }
         }
     }
@@ -403,22 +368,29 @@ class IsometricWorld extends PIXI.Container {
     private atmosphereLayer: PIXI.Container;
     private uiLayer: PIXI.Container;
     public player: Player | null = null;
-    public navGrid: boolean[][] = [];
-    public pathfinder: Pathfinder | null = null;
     public waveController: WaveController = new WaveController();
     private enemies: BaseEntity[] = [];
     private godRays: PIXI.Graphics[] = [];
     private fireflies: PIXI.Graphics[] = [];
     private hpContainer: PIXI.Container;
 
+    // Physics
+    private engine: Matter.Engine;
+    private physicsBodies: Map<BaseEntity, Matter.Body> = new Map();
+
     // Mouse interaction state
     private isMouseDown: boolean = false;
     private mouseTargetX: number = 0;
     private mouseTargetY: number = 0;
     private mouseTargetEnemy: BaseEntity | null = null;
+    private attackTimer: number = 0;
 
     // HUD Text
     private hudText: PIXI.Text | null = null;
+
+    public getPhysicsBody(entity: BaseEntity): Matter.Body | undefined {
+        return this.physicsBodies.get(entity);
+    }
 
     constructor() {
         super();
@@ -436,13 +408,9 @@ class IsometricWorld extends PIXI.Container {
         this.hpContainer = new PIXI.Container();
         this.addChild(this.hpContainer);
 
-        for (let y = 0; y < WORLD_SIZE; y++) {
-            this.navGrid[y] = [];
-            for (let x = 0; x < WORLD_SIZE; x++) {
-                this.navGrid[y][x] = true;
-            }
-        }
-        this.pathfinder = new Pathfinder(this.navGrid);
+        // Initialize Physics Engine
+        this.engine = Matter.Engine.create();
+        this.engine.world.gravity.y = 0; // No gravity for top-down game
     }
 
     public async init() {
@@ -455,10 +423,20 @@ class IsometricWorld extends PIXI.Container {
         // Spawn Player at grid center
         this.player = new Player(converter, this);
         const playerPos = converter.cartesianToIso(Math.floor(WORLD_SIZE / 2), Math.floor(WORLD_SIZE / 2));
-        this.player.x = playerPos.x + TILE_CENTER_OFFSET.X;
-        this.player.y = playerPos.y + TILE_CENTER_OFFSET.Y;
+        this.player.x = playerPos.x;
+        this.player.y = playerPos.y;
         this.player.zIndex = this.player.y;
         this.worldContainer.addChild(this.player);
+
+        // Create physics body for player
+        const playerBody = Matter.Bodies.circle(
+            Math.floor(WORLD_SIZE / 2) * 64 + 32, // Cartesian X
+            Math.floor(WORLD_SIZE / 2) * 64 + 32, // Cartesian Y
+            16, // radius
+            { friction: 0, frictionAir: 0.1, restitution: 0 }
+        );
+        Matter.World.add(this.engine.world, playerBody);
+        this.physicsBodies.set(this.player, playerBody);
 
         // Initial Horde
         this.spawnHorde(this.waveController.totalEnemiesToSpawn);
@@ -520,19 +498,24 @@ class IsometricWorld extends PIXI.Container {
         for (let i = 0; i < count; i++) {
             const zombie = new EnemyZombie(converter, this);
             // Spawn from edges
-            let spawnPos;
-            let attempts = 0;
-            do {
-                spawnPos = this.waveController.getEdgeSpawnPos(WORLD_SIZE);
-                attempts++;
-            } while (!this.navGrid[spawnPos.y][spawnPos.x] && attempts < 10);
+            const spawnPos = this.waveController.getEdgeSpawnPos(WORLD_SIZE);
 
             const pos = converter.cartesianToIso(spawnPos.x, spawnPos.y);
-            zombie.x = pos.x + TILE_CENTER_OFFSET.X;
-            zombie.y = pos.y + TILE_CENTER_OFFSET.Y;
+            zombie.x = pos.x;
+            zombie.y = pos.y;
             zombie.zIndex = zombie.y;
             this.enemies.push(zombie);
             this.worldContainer.addChild(zombie);
+
+            // Create physics body for enemy
+            const enemyBody = Matter.Bodies.circle(
+                spawnPos.x * 64 + 32,
+                spawnPos.y * 64 + 32,
+                16,
+                { friction: 0, frictionAir: 0.1, restitution: 0 }
+            );
+            Matter.World.add(this.engine.world, enemyBody);
+            this.physicsBodies.set(zombie, enemyBody);
         }
         this.updateHUD();
     }
@@ -564,8 +547,16 @@ class IsometricWorld extends PIXI.Container {
                     fernObj.x = pos.x;
                     fernObj.y = pos.y;
                     fernObj.zIndex = pos.y; // Standard depth
-                    this.markAreaBlocked(x, y, 4, 4);
                     this.worldContainer.addChild(fernObj);
+
+                    // Create physics body for obstacle
+                    const obstacleBody = Matter.Bodies.rectangle(
+                        x * 64 + 128, // Center X (4*64/2 + x*64)
+                        y * 64 + 128, // Center Y
+                        256, 256, // Size (4*64)
+                        { isStatic: true }
+                    );
+                    Matter.World.add(this.engine.world, obstacleBody);
                 } else if (Math.random() < 0.15) {
                     // Mushrooms (2x2)
                     const mx = x + (Math.random() < 0.5 ? 0 : 2);
@@ -575,12 +566,19 @@ class IsometricWorld extends PIXI.Container {
                     mushroom.x = mPos.x;
                     mushroom.y = mPos.y;
                     mushroom.zIndex = mPos.y;
-                    this.markAreaBlocked(mx, my, 2, 2);
                     this.worldContainer.addChild(mushroom);
+
+                    // Create physics body for obstacle
+                    const obstacleBody = Matter.Bodies.rectangle(
+                        mx * 64 + 64, // Center X (2*64/2 + mx*64)
+                        my * 64 + 64, // Center Y
+                        128, 128, // Size (2*64)
+                        { isStatic: true }
+                    );
+                    Matter.World.add(this.engine.world, obstacleBody);
                 }
             }
         }
-        if (this.pathfinder) this.pathfinder.updateGrid(this.navGrid);
     }
 
     private handleMouseDown(e: MouseEvent) {
@@ -645,204 +643,52 @@ class IsometricWorld extends PIXI.Container {
 
         this.mouseTargetEnemy = finalEnemy || null;
 
-        // Set final path to the release position
-        this.performActionAtTarget();
+        // Stop movement when mouse is released
+        if (this.player) {
+            this.player.clearTargetPosition();
+            this.player.movementDirection = null;
+        }
     }
 
     private performActionAtTarget() {
         if (!this.player || this.player.isDead) return;
 
         if (this.mouseTargetEnemy && !this.mouseTargetEnemy.isDead) {
-            // Always move towards enemy, attack when close enough
+            // Handle movement towards enemy (attack is handled by timer in update())
             const dist = Math.sqrt(Math.pow(this.mouseTargetEnemy.x - this.player.x, 2) + Math.pow(this.mouseTargetEnemy.y - this.player.y, 2));
             if (dist < 50) {
-                // Very close - stop moving and attack if mouse is held down
-                this.player.clearPath(); // Stop moving
-                if (this.isMouseDown) {
-                    // Only attack while mouse is held down
-                    this.player.attack(this.mouseTargetEnemy);
-                }
+                // Close enough - stop moving (attack handled by timer)
+                this.player.clearTargetPosition();
+                this.player.movementDirection = null;
             } else {
-                // Move towards enemy using pathfinding
-                if (this.pathfinder) {
-                    const enemyGridPos = this.mouseTargetEnemy.getGridPos();
-                    const start = this.player.getGridPos();
-                    const rawPath = this.pathfinder.findPath(start.x, start.y, enemyGridPos.x, enemyGridPos.y);
-                    if (rawPath && rawPath.length > 0) {
-                        // Smooth the path to avoid sharp corners
-                        const smoothedPath = this.smoothPath(rawPath);
-                        // Offset path points to centers and convert to screen coordinates
-                        const path = smoothedPath.map(p => ({
-                            x: p.x,
-                            y: p.y,
-                            screenX: converter.cartesianToIso(p.x, p.y).x + TILE_CENTER_OFFSET.X,
-                            screenY: converter.cartesianToIso(p.x, p.y).y + TILE_CENTER_OFFSET.Y
-                        }));
-                        this.player.setPath(path as any);
-                    }
-                }
+                // Set target position towards enemy
+                this.player.setTargetPosition(this.mouseTargetEnemy.x, this.mouseTargetEnemy.y);
             }
         } else {
-            // Move directly to target position (no pathfinding for player)
-            const cart = converter.isoToCartesian(this.mouseTargetX, this.mouseTargetY);
-            const gx = Math.round(cart.x);
-            const gy = Math.round(cart.y);
-
-            if (gx >= 0 && gx < WORLD_SIZE && gy >= 0 && gy < WORLD_SIZE && this.navGrid[gy][gx]) {
-                // Create a direct path to the target
-                const directPath = [{
-                    x: gx,
-                    y: gy,
-                    screenX: this.mouseTargetX,
-                    screenY: this.mouseTargetY
-                }];
-                this.player.setPath(directPath as any);
-            }
+            // Set target position towards mouse position
+            this.player.setTargetPosition(this.mouseTargetX, this.mouseTargetY);
         }
-    }
-
-    private markAreaBlocked(x: number, y: number, w: number, h: number) {
-        for (let i = x; i < x + w; i++) {
-            for (let j = y; j < y + h; j++) {
-                this.navGrid[j][i] = false;
-            }
-        }
-    }
-
-    private isPositionBlocked(screenX: number, screenY: number): boolean {
-        // Convert screen coordinates to grid coordinates
-        const cart = converter.isoToCartesian(screenX, screenY);
-        const gx = Math.floor(cart.x);
-        const gy = Math.floor(cart.y);
-
-        // Check bounds
-        if (gx < 0 || gy < 0 || gx >= WORLD_SIZE || gy >= WORLD_SIZE) {
-            return true; // Out of bounds is blocked
-        }
-
-        // Check if grid position is blocked - use circular collision for smoother movement
-        if (!this.navGrid[gy][gx]) {
-            return true; // Center grid is blocked
-        }
-
-        // Check adjacent grids in a small radius for smoother collision
-        const checkRadius = 0.7; // Check within 0.7 grid units
-        for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-                if (dx === 0 && dy === 0) continue; // Skip center, already checked
-
-                const checkGx = gx + dx;
-                const checkGy = gy + dy;
-
-                if (checkGx >= 0 && checkGx < WORLD_SIZE && checkGy >= 0 && checkGy < WORLD_SIZE) {
-                    // Calculate distance from center of checked grid to our position
-                    const gridCenterX = checkGx + 0.5;
-                    const gridCenterY = checkGy + 0.5;
-                    const distance = Math.sqrt((cart.x - gridCenterX) ** 2 + (cart.y - gridCenterY) ** 2);
-
-                    // If blocked grid is close enough and we're near its edge, consider it blocked
-                    if (!this.navGrid[checkGy][checkGx] && distance < checkRadius) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-
-    public canMoveTo(fromX: number, fromY: number, toX: number, toY: number): boolean {
-        // Check if the target position is blocked
-        if (this.isPositionBlocked(toX, toY)) {
-            return false;
-        }
-
-        // For more precise collision, check intermediate points along the path
-        const dx = toX - fromX;
-        const dy = toY - fromY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance > 5) { // Only check if moving more than 5 pixels
-            const steps = Math.ceil(distance / 5);
-            for (let i = 1; i <= steps; i++) {
-                const ratio = i / steps;
-                const checkX = fromX + dx * ratio;
-                const checkY = fromY + dy * ratio;
-                if (this.isPositionBlocked(checkX, checkY)) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    private smoothPath(rawPath: Node[]): Node[] {
-        if (rawPath.length <= 2) return rawPath;
-
-        const smoothedPath: Node[] = [rawPath[0]];
-
-        for (let i = 1; i < rawPath.length - 1; i++) {
-            const prev = rawPath[i - 1];
-            const curr = rawPath[i];
-            const next = rawPath[i + 1];
-
-            // Check if this is a corner (direction change)
-            const prevDirX = curr.x - prev.x;
-            const prevDirY = curr.y - prev.y;
-            const nextDirX = next.x - curr.x;
-            const nextDirY = next.y - curr.y;
-
-            // If direction changed, add intermediate points for smoother turning
-            if ((prevDirX !== nextDirX || prevDirY !== nextDirY) && (prevDirX !== 0 || prevDirY !== 0) && (nextDirX !== 0 || nextDirY !== 0)) {
-                // Add intermediate point at 0.5 distance
-                const midX = prev.x + (curr.x - prev.x) * 0.5;
-                const midY = prev.y + (curr.y - prev.y) * 0.5;
-                smoothedPath.push({ x: midX, y: midY });
-            }
-
-            smoothedPath.push(curr);
-        }
-
-        // Add the last point
-        smoothedPath.push(rawPath[rawPath.length - 1]);
-
-        return smoothedPath;
-    }
-
-    private isPositionOccupiedByEntity(screenX: number, screenY: number, excludeEntity?: BaseEntity): boolean {
-        const entities = [...this.enemies];
-        if (this.player && this.player !== excludeEntity) entities.push(this.player);
-
-        // Check if any entity is close to the target position
-        for (const entity of entities) {
-            if (entity === excludeEntity || entity.isDead) continue;
-
-            const dx = entity.x - screenX;
-            const dy = entity.y - screenY;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            // Consider entities as occupying a 32-pixel radius around their center
-            if (distance < 32) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    public canMoveToWithEntities(fromX: number, fromY: number, toX: number, toY: number, excludeEntity?: BaseEntity): boolean {
-        // First check terrain collision
-        if (!this.canMoveTo(fromX, fromY, toX, toY)) {
-            return false;
-        }
-
-        // Then check entity collision
-        return !this.isPositionOccupiedByEntity(toX, toY, excludeEntity);
     }
 
     public update(delta: number) {
+        // Update physics engine
+        Matter.Engine.update(this.engine, delta * 16.67); // Convert delta to milliseconds
+
         if (this.player) this.player.update(delta);
+
+        // Handle continuous attack when mouse is held down over enemy
+        if (this.isMouseDown && this.mouseTargetEnemy && !this.mouseTargetEnemy.isDead && this.player && !this.player.isDead) {
+            this.attackTimer -= delta;
+            if (this.attackTimer <= 0) {
+                const dist = Math.sqrt(Math.pow(this.mouseTargetEnemy.x - this.player.x, 2) + Math.pow(this.mouseTargetEnemy.y - this.player.y, 2));
+                if (dist < 50) {
+                    this.player.attack(this.mouseTargetEnemy);
+                    this.attackTimer = 30; // Reset timer for next attack (0.5s at 60fps)
+                }
+            }
+        } else {
+            this.attackTimer = 0; // Reset timer when not attacking
+        }
 
         // Handle wave progression
         if (this.waveController.update(delta)) {
