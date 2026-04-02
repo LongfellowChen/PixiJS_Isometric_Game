@@ -422,7 +422,7 @@ class IsometricWorld extends PIXI.Container {
             Math.floor(WORLD_SIZE / 2) * 64 + 32, // Cartesian Y
             32, // 物理碰撞半徑
             {
-                friction: 1.0, // 增加摩擦力，讓玩家更難被推動
+                friction: 0.5, // 增加摩擦力，讓玩家更難被推動
                 frictionAir: 0.1, // 增加空氣阻力
                 restitution: 0, // 無彈性
                 density: 0.01 // 增加密度，讓實體更重更穩定
